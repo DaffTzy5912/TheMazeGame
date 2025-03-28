@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Maze</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(to bottom, #1a1a1a, #333);
+            color: white;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.7);
+        }
+
+        #game-container {
+            position: relative;
+            width: 300px;
+            height: 300px;
+            background: url('https://files.catbox.moe/5bahmh.jpg') no-repeat center center;
+            background-size: cover;
+            border: 5px solid white;
+            border-radius: 10px;
+            overflow: hidden;
+            display: grid;
+            grid-template-columns: repeat(10, 1fr);
+            grid-template-rows: repeat(10, 1fr);
+        }
+
+        #player {
+            width: 30px;
+            height: 30px;
+            background-color: red;
+            border-radius: 50%;
+            position: absolute;
+            transition: transform 0.15s ease;
+        }
+
+        .wall {
+            width: 100%;
+            height: 100%;
+            background-image: url("https://files.catbox.moe/xfxk9i.jpg");
+            background-size: cover;
+            border: 1px solid #222;
+        }
+
+        .trap {
+            width: 100%;
+            height: 100%;
+            background-color: purple;
+            border-radius: 50%;
+            opacity: 0.8;
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0% {
+                transform: scale(1);
+            }
+            50% {
+                transform: scale(1.1);
+            }
+            100% {
+                transform: scale(1);
+            }
+        }
+
+        #goal {
+            width: 30px;
+            height: 30px;
+            background-color: gold;
+            border-radius: 50%;
+            position: absolute;
+            right: 0;
+            bottom: 0;
+            box-shadow: 0 0 10px gold;
+        }
+
+        #controls {
+            margin-top: 20px;
+            display: flex;
+            gap: 10px;
+        }
+
+        #controls button {
+            padding: 10px 20px;
+            font-size: 1rem;
+            background-color: #4caf50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+
+        #controls button:hover {
+            background-color: #45a049;
+        }
+
+        #message {
+            font-size: 1.2rem;
+            font-weight: bold;
+            margin-top: 10px;
+            color: yellow;
+        }
+
+        #timer {
+            font-size: 1.2rem;
+            margin-top: 10px;
+            color: cyan;
+        }
+    </style>
+</head>
+<body>
+    <h1>The Maze</h1>
+    <p id="timer">Waktu: 0 detik</p>
+    <div id="game-container">
+        <div id="player"></div>
+        <div id="goal"></div>
+    </div>
+    <p id="message"></p>
+    <div id="controls">
+        <button onclick="startGame()">Mulai Ulang</button>
+    </div>
+
+    <audio id="moveSound" src="https://www.fesliyanstudios.com/play-mp3/387"></audio>
+    <script>
+        const gameContainer = document.getElementById("game-container");
+        const player = document.getElementById("player");
+        const message = document.getElementById("message");
+        const timerDisplay = document.getElementById("timer");
+        const moveSound = document.getElementById("moveSound");
+
+        let playerPos = { x: 0, y: 0 };
+        let startTime, interval;
+        const mazeSize = 10;
+        const walls = [];
+        const traps = [];
+
+        // Suara gerakan
+        function playMoveSound() {
+            moveSound.currentTime = 0;
+            moveSound.play();
+        }
+
+        // Membuat labirin dengan dinding acak
+        function createMaze() {
+            walls.forEach(wall => wall.remove());
+            walls.length = 0;
+
+            for (let i = 0; i < 25; i++) {
+                let wall = document.createElement("div");
+                wall.classList.add("wall");
+
+                let x, y;
+                do {
+                    x = Math.floor(Math.random() * mazeSize);
+                    y = Math.floor(Math.random() * mazeSize);
+                } while ((x === 0 && y === 0) || (x === 9 && y === 9));
+
+                wall.style.gridArea = `${y + 1} / ${x + 1}`;
+                gameContainer.appendChild(wall);
+                walls.push(wall);
+            }
+        }
+
+        // Membuat jebakan
+        function createTraps() {
+            traps.forEach(trap => trap.remove());
+            traps.length = 0;
+
+            for (let i = 0; i < 5; i++) {
+                let trap = document.createElement("div");
+                trap.classList.add("trap");
+
+                let x, y;
+                do {
+                    x = Math.floor(Math.random() * mazeSize);
+                    y = Math.floor(Math.random() * mazeSize);
+                } while ((x === 0 && y === 0) || (x === 9 && y === 9) || isWallAt(x, y));
+
+                trap.style.gridArea = `${y + 1} / ${x + 1}`;
+                gameContainer.appendChild(trap);
+                traps.push(trap);
+            }
+        }
+
+        // Dinding bergerak setiap 5 detik tanpa menimpa pemain
+        function moveWalls() {
+            setInterval(() => {
+                walls.forEach(wall => {
+                    let newX, newY;
+                    do {
+                        newX = Math.floor(Math.random() * mazeSize);
+                        newY = Math.floor(Math.random() * mazeSize);
+                    } while (isWallAt(newX, newY) || (newX === playerPos.x && newY === playerPos.y));
+
+                    wall.style.gridArea = `${newY + 1} / ${newX + 1}`;
+                });
+            }, 5000);
+        }
+
+        function startGame() {
+            playerPos = { x: 0, y: 0 };
+            player.style.transform = "translate(0px, 0px)";
+            message.innerText = "";
+            createMaze();
+            createTraps();
+            moveWalls();
+
+            startTime = Date.now();
+            clearInterval(interval);
+            interval = setInterval(updateTimer, 1000);
+        }
+
+        function updateTimer() {
+            let elapsedTime = Math.floor((Date.now() - startTime) / 1000);
+            timerDisplay.innerText = `Waktu: ${elapsedTime} detik`;
+        }
+
+        // Cek jika ada dinding di posisi tertentu
+        function isWallAt(x, y) {
+            return walls.some(wall => 
+                wall.style.gridArea === `${y + 1} / ${x + 1}`
+            );
+        }
+
+        // Cek jika ada jebakan di posisi tertentu
+        function isTrapAt(x, y) {
+            return traps.some(trap => 
+                trap.style.gridArea === `${y + 1} / ${x + 1}`
+            );
+        }
+
+        // Kontrol pemain
+        document.addEventListener("keydown", (event) => {
+            let newX = playerPos.x;
+            let newY = playerPos.y;
+
+            if (event.key === "ArrowUp" || event.key === "w") newY--;
+            if (event.key === "ArrowDown" || event.key === "s") newY++;
+            if (event.key === "ArrowLeft" || event.key === "a") newX--;
+            if (event.key === "ArrowRight" || event.key === "d") newX++;
+
+            if (newX >= 0 && newX < mazeSize && newY >= 0 && newY < mazeSize) {
+                if (!isWallAt(newX, newY)) {
+                    playerPos.x = newX;
+                    playerPos.y = newY;
+                    player.style.transform = `translate(${newX * 30}px, ${newY * 30}px)`;
+
+                    // Mainkan suara
+                    playMoveSound();
+                }
+            }
+
+            // Cek jika menyentuh jebakan (mengurangi waktu!)
+            if (isTrapAt(playerPos.x, playerPos.y)) {
+                alert("⚠️ Kamu kena jebakan! Waktu dikurangi 5 detik!");
+                startTime -= 5000;
+            }
+
+            // Cek jika sampai tujuan
+            if (playerPos.x === 9 && playerPos.y === 9) {
+                clearInterval(interval);
+                let timeTaken = Math.floor((Date.now() - startTime) / 1000);
+                setTimeout(() => {
+                    let playAgain = confirm(`🎉 Selamat! Kamu menang dalam ${timeTaken} detik!\n\nMau main lagi?`);
+                    if (playAgain) {
+                        startGame();
+                    }
+                }, 500);
+            }
+        });
+
+        // Mulai game
+        startGame();
+    </script>
+</body>
+</html>
